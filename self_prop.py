@@ -5,14 +5,15 @@ import math
 from itertools import combinations
 
 class Particle:
-    def __init__(self, pos, linvel):
+    def __init__(self, pos, linvel, isFromWedge=False):
         self.pos=pos
         self.linvel=linvel
+        self.isFromWedge=isFromWedge
 
 class Chain:
-    def __init__(self, pos=None, angle=None):    
+    def __init__(self, chainSize=None, pos=None, angle=None, isWedge=False):    
         if pos is None:
-            self.pos=np.array([random.uniform(-100,100), random.uniform(-100,100)], dtype=np.float64)
+            self.pos=np.array([random.uniform(boxX[0], boxX[1]), random.uniform(boxY[0], boxY[1])], dtype=np.float64)
         else:
             self.pos=pos
 
@@ -20,24 +21,30 @@ class Chain:
             self.angle=random.uniform(0,2*np.pi)
         else:
             self.angle=angle
-        # self.angle=random.uniform(0,2*np.pi)
-        self.orient= np.array([np.cos(self.angle), np.sin(self.angle)], dtype=np.float64)                    #unit vector, equal to diameter of one particle
+        self.orient= np.array([np.cos(self.angle), np.sin(self.angle)], dtype=np.float64)      #unit vector, equal to distance between COM of consecutive particles
         self.linvel=np.array([0,0], dtype=np.float64)
-        self.angvel=0                    #vector-wise this is in z
-        self.length=chainLength
-        self.mass=chainMass
-        self.moi=5  #update this
+        self.angvel=0                                                                          #vector-wise this is in z
+        if chainSize is None:
+            chainSize=globalChainSize
+        self.chainSize=chainSize
         self.force=Fo*self.orient
         self.moment=0
         self.particles=[]
-        for i in range(-1*int(chainLength/2),int(chainLength/2)+1):
-            particlePos=self.pos+(i*self.orient)
-            particleVel=self.linvel+zxycross(self.angvel, particlePos-self.pos)
-            self.particles.append(Particle(particlePos, particleVel))
-    
+        self.isWedge=isWedge
+        if self.chainSize%2!=0:
+            for i in range(-1*int(self.chainSize/2),int(self.chainSize/2)+1):
+                particlePos=self.pos+(d*i*self.orient)
+                particleVel=self.linvel+zxycross(self.angvel, particlePos-self.pos)
+                self.particles.append(Particle(particlePos, particleVel))
+        else:
+            for i in range(-1*(int(self.chainSize/2)-1),int(self.chainSize/2)+1):
+                particlePos=self.pos+(d*i*self.orient)-(d/2)*self.orient
+                particleVel=self.linvel+zxycross(self.angvel, particlePos-self.pos)
+                self.particles.append(Particle(particlePos, particleVel))
+                
     def updateParticles(self):
         for i in range(len(self.particles)):
-            self.particles[i].pos=self.pos+((i-int(len(self.particles)/2))*self.orient)
+            self.particles[i].pos=self.pos+((i-int(len(self.particles)/2))*d*self.orient)
             self.particles[i].linvel=self.linvel+zxycross(self.angvel, self.particles[i].pos-self.pos)
 
 # cross of a vector in x-y plane with a vector perpendicular to it
@@ -51,6 +58,8 @@ def getForce(a:Particle, b:Particle)->np.ndarray:
     rmod=np.linalg.norm(a.pos-b.pos)
     rhat=(a.pos-b.pos)/rmod
     f = ((Uo*math.exp(-1*rmod/lamb))/rmod)*((1/rmod)+(1/lamb))*rhat
+    if not (a.isFromWedge or b.isFromWedge):
+        f/=(globalChainSize**2)
     return f
     
 
@@ -66,63 +75,88 @@ def updateChainForces(a:Chain, b:Chain):
             a.moment+=np.cross(a.particles[i].pos-a.pos, force)
             b.moment+=np.cross(b.particles[j].pos-b.pos, -1*force)
 
-# def addSelfForce(chain:Chain):
-#     if not isinstance(chain, Chain):
-#         raise TypeError("force cannot be calculated for non chains")
-#     chain.force+=Fo*chain.orient
-
 def updateChainPositions(chain:Chain):
     if not isinstance(chain, Chain):
         raise TypeError("force cannot be calculated for non chains")
     chain.pos+=chain.linvel*timeStep
-    # angle = np.arctan2(a.orient[1], a.orient[0])
+    chain.pos[0]=((chain.pos[0]-boxX[0])%(boxX[1]-boxX[0]))+boxX[0]
+    chain.pos[1]=((chain.pos[1]-boxY[0])%(boxY[1]-boxY[0]))+boxY[0]
     chain.angle+=chain.angvel*timeStep
     if chain.angle>2*np.pi:
         chain.angle-=2*np.pi
     if chain.angle<0:
         chain.angle+=2*np.pi
     chain.orient=np.array([np.cos(chain.angle), np.sin(chain.angle)])
-    if chain.pos[0]>100 or chain.pos[0]<-100:
-        chain.orient[0]*=-1
-        chain.angle=np.arctan2(chain.orient[1], chain.orient[0])
-    if chain.pos[1]>100 or chain.pos[1]<-100:
-        chain.orient[1]*=-1
-        chain.angle=np.arctan2(chain.orient[1], chain.orient[0])    
+
+
+    # if chain.pos[0]>boxX[1] or chain.pos[0]<boxX[0]:
+    #     chain.orient[0]*=-1
+    #     chain.angle=np.arctan2(chain.orient[1], chain.orient[0])
+    # if chain.pos[1]>boxY[1] or chain.pos[1]<boxY[0]:
+    #     chain.orient[1]*=-1
+    #     chain.angle=np.arctan2(chain.orient[1], chain.orient[0])    
 
 def updateChainVelocities(chain:Chain):
     if not isinstance(chain, Chain):
         raise TypeError("force cannot be calculated for non chains")
     chain.linvel=((np.dot(chain.force, chain.orient)/ft1)*chain.orient)+((chain.force-np.dot(chain.force, chain.orient)*chain.orient)/ft2)
     chain.angvel=chain.moment/fr
-    # chain.force/=chain.mass
-    # chain.moment/=chain.moi
-    # chain.linvel+=chain.force*timeStep
-    # chain.angvel+=chain.moment*timeStep
+
+# def getAspectRatio():
+#     return ((2*particleRadius)+((globalChainSize-1)*1))/(2*particleRadius)
+
+def getFrictionCoeff():
+    a=aRatio
+    fParallel = 2*np.pi/(np.log(a)-0.207+(0.98/a)-(0.133/(a**2)))
+    fPerpendicular = 2*np.pi/(np.log(a)+0.839+(0.185/a)+(0.233/(a**2)))
+    fRot = np.pi*(a**2)/(3*(np.log(a)-0.662+(0.917/a)-(0.05/(a**2))))
+    return fo*fParallel, fo*fPerpendicular, fo*fRot
+
+def makeWedge():
+    # if wedgeSize%2==0:
+    #     raise ValueError("length of wedge must be odd")
+    upperChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize-1)*d*np.cos(wedgeAngle/2)/2,(wedgeSize-1)*d*np.sin(wedgeAngle/2)/2]), dtype=np.float64), 
+                       angle=wedgeAngle/2, isWedge=True)
+    
+    lowerChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize+1)*d*np.cos(-1*wedgeAngle/2)/2,(wedgeSize+1)*d*np.sin(-1*wedgeAngle/2)/2]), dtype=np.float64), 
+                       angle=-1*wedgeAngle/2, isWedge=True)
+    
+    return upperChain, lowerChain
 
 if __name__=="__main__":
-    Uo=100
+    Uo=250
     lamb=1
-    chainLength=5
-    chainMass=5
-    timeStep=0.001
-    Fo=200
-    chainNos=50
-    ft1=1
-    ft2=1
-    fr=1        #modify these ft and fr values
-    # t=0
-    if chainLength%2==0:
-        raise ValueError("length of chain must be odd")
-    chains=[]
-    # for i in range(chainNos):
-    #     chains.append(Chain())
-
-    chains.append(Chain(pos=np.array([0,0], dtype=np.float64), angle=np.pi/3))
-    chains.append(Chain(pos=np.array([0,10], dtype=np.float64), angle=5*np.pi/3))
+    l=10
+    aRatio=l/lamb
+    globalChainSize=int(round(9*aRatio/8))
+    d=l/(math.sqrt((globalChainSize+1)*(globalChainSize-1)))
+    timeStep=1
+    Fo=1
+    chainNos=2
+    # particleRadius=0.55
+    fo=1
+    wedgeSize=globalChainSize*10
+    wedgeAngle=np.pi/2
+    ft1, ft2, fr = getFrictionCoeff()
+    boxX=(-15*l,15*l)
+    boxY=(-15*l,15*l)
+    # if globalChainSize%2==0:
+    #     raise ValueError("length of chain must be odd")
     
-    # comb = combinations(chains, 2)
+    chains=[]
+    uC, lC = makeWedge()
+    chains.append(uC)
+    chains.append(lC)
+    # exit()
+    # Chain(chainSize=)
 
-    for t in range(0, 1000):
+    for i in range(chainNos):
+        chains.append(Chain())
+
+    # chains.append(Chain(pos=np.array([0,0], dtype=np.float64), angle=np.pi/3))
+    # chains.append(Chain(pos=np.array([0,10], dtype=np.float64), angle=5*np.pi/3))
+    
+    for t in range(0, 500):
         print(t)
         comb = combinations(chains, 2)
 
@@ -130,27 +164,21 @@ if __name__=="__main__":
             updateChainForces(i[0], i[1])
         for chain in chains:
             # addSelfForce(i)
-            updateChainVelocities(chain)
-            updateChainPositions(chain)
-            chain.updateParticles()
+            if not chain.isWedge:
+                updateChainVelocities(chain)
+                updateChainPositions(chain)
+                chain.updateParticles()
             chain.force=Fo*chain.orient
             chain.moment=0
-            for particle in chain.particles:
-                plt.plot(particle.pos[0], particle.pos[1], 'r', marker=".", markersize=5)
-        plt.xlim(-10, 50)
-        plt.ylim(-10,50)
-        
+            if chain.isWedge:
+                for particle in chain.particles:
+                    plt.plot(particle.pos[0], particle.pos[1], 'b', marker=".", markersize=6)
+            else:
+                for particle in chain.particles:
+                    plt.plot(particle.pos[0], particle.pos[1], 'r', marker=".", markersize=6)
+        plt.xlim(boxX[0], boxX[1])
+        plt.ylim(boxY[0], boxY[1])
 
-        # for particle in chains[0].particles:
-        #     plt.plot(particle.pos[0], particle.pos[1], 'ro')
-        # for particle in chains[1].particles:
-        #     plt.plot(particle.pos[0], particle.pos[1], 'bo')
-
-            # plt.plot(chain.)
-        # plt.plot(chains[0].pos[0], chains[0].pos[1], 'ro')
-        # plt.plot(chains[1].pos[0], chains[1].pos[1], 'bo')
-        # plt.show()
-        # if t%10==0:
         plt.savefig("./out/test"+str(t)+".png")
         plt.clf()
 
