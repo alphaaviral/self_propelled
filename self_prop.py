@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from itertools import combinations
+import copy
 
 class Particle:
     def __init__(self, pos, linvel, isFromWedge=False):
@@ -54,9 +55,23 @@ def zxycross(z:float, xy:np.ndarray):
 # force on a due to b
 def getForce(a:Particle, b:Particle)->np.ndarray:
     if not isinstance(a, Particle) or not isinstance(b, Particle):
-        raise TypeError("force cannot be calculated for non particles")
-    rmod=np.linalg.norm(a.pos-b.pos)
-    rhat=(a.pos-b.pos)/rmod
+        raise TypeError("force cannot be calculated for non particles") 
+    apos = copy.deepcopy(a.pos)
+    bpos= copy.deepcopy(b.pos)
+    if abs(apos[0]-bpos[0])>(boxX[1]-boxX[0])/2:
+        if apos[0]>bpos[0]:
+            bpos[0]+=boxX[1]-boxX[0]
+        else:
+            apos[0]+=boxX[1]-boxX[0]
+
+    if abs(apos[1]-bpos[1])>(boxY[1]-boxY[0])/2:
+        if apos[1]>bpos[1]:
+            bpos[1]+=boxY[1]-boxY[0]
+        else:
+            apos[1]+=boxY[1]-boxY[0]
+
+    rmod=np.linalg.norm(apos-bpos)
+    rhat=(apos-bpos)/rmod
     f = ((Uo*math.exp(-1*rmod/lamb))/rmod)*((1/rmod)+(1/lamb))*rhat
     if not (a.isFromWedge or b.isFromWedge):
         f/=(globalChainSize**2)
@@ -124,22 +139,22 @@ def makeWedge():
     return upperChain, lowerChain
 
 if __name__=="__main__":
-    Uo=250
+    Uo=10
     lamb=1
-    l=10
+    l=3
     aRatio=l/lamb
     globalChainSize=int(round(9*aRatio/8))
     d=l/(math.sqrt((globalChainSize+1)*(globalChainSize-1)))
     timeStep=1
-    Fo=1
-    chainNos=2
+    Fo=2
+    chainNos=20
     # particleRadius=0.55
     fo=1
-    wedgeSize=globalChainSize*10
+    wedgeSize=globalChainSize*3
     wedgeAngle=np.pi/2
     ft1, ft2, fr = getFrictionCoeff()
-    boxX=(-15*l,15*l)
-    boxY=(-15*l,15*l)
+    boxX=(-5*l,5*l)
+    boxY=(-5*l,5*l)
     # if globalChainSize%2==0:
     #     raise ValueError("length of chain must be odd")
     

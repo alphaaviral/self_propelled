@@ -1,3 +1,6 @@
 out/
 Docs/
 animated_outputs/
+archive/
+*.zip
+*.avi
