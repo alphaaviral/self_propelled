@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import math
 from itertools import combinations
 import copy
+import csv
+from sys import getsizeof
+import pandas as pd
 
 class Particle:
     def __init__(self, pos, linvel, isFromWedge=False):
@@ -73,8 +76,8 @@ def getForce(a:Particle, b:Particle)->np.ndarray:
     rmod=np.linalg.norm(apos-bpos)
     rhat=(apos-bpos)/rmod
     f = ((Uo*math.exp(-1*rmod/lamb))/rmod)*((1/rmod)+(1/lamb))*rhat
-    if not (a.isFromWedge or b.isFromWedge):
-        f/=(globalChainSize**2)
+    # if not (a.isFromWedge or b.isFromWedge):
+    #     f/=(globalChainSize**2)
     return f
     
 
@@ -127,7 +130,7 @@ def getFrictionCoeff():
     fRot = np.pi*(a**2)/(3*(np.log(a)-0.662+(0.917/a)-(0.05/(a**2))))
     return fo*fParallel, fo*fPerpendicular, fo*fRot
 
-def makeWedge():
+def addWedge(chainArray):
     # if wedgeSize%2==0:
     #     raise ValueError("length of wedge must be odd")
     upperChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize-1)*d*np.cos(wedgeAngle/2)/2,(wedgeSize-1)*d*np.sin(wedgeAngle/2)/2]), dtype=np.float64), 
@@ -136,19 +139,23 @@ def makeWedge():
     lowerChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize+1)*d*np.cos(-1*wedgeAngle/2)/2,(wedgeSize+1)*d*np.sin(-1*wedgeAngle/2)/2]), dtype=np.float64), 
                        angle=-1*wedgeAngle/2, isWedge=True)
     
-    return upperChain, lowerChain
+    chainArray.append(upperChain)
+    chainArray.append(lowerChain)
+    # return upperChain, lowerChain
+
+
 
 if __name__=="__main__":
-    Uo=10
+    Uo=2
     lamb=1
-    l=3
+    l=10
     aRatio=l/lamb
     globalChainSize=int(round(9*aRatio/8))
     d=l/(math.sqrt((globalChainSize+1)*(globalChainSize-1)))
     timeStep=1
     Fo=2
     chainNos=20
-    # particleRadius=0.55
+    dataArr=[]
     fo=1
     wedgeSize=globalChainSize*3
     wedgeAngle=np.pi/2
@@ -159,32 +166,33 @@ if __name__=="__main__":
     #     raise ValueError("length of chain must be odd")
     
     chains=[]
-    uC, lC = makeWedge()
-    chains.append(uC)
-    chains.append(lC)
-    # exit()
-    # Chain(chainSize=)
-
+    addWedge(chains)
     for i in range(chainNos):
         chains.append(Chain())
-
-    # chains.append(Chain(pos=np.array([0,0], dtype=np.float64), angle=np.pi/3))
-    # chains.append(Chain(pos=np.array([0,10], dtype=np.float64), angle=5*np.pi/3))
     
     for t in range(0, 500):
+        timeData=[[t]]
         print(t)
         comb = combinations(chains, 2)
+
+        if len(dataArr)>1000:
+            with open("./data.csv", 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerows(dataArr)
+            dataArr=[]
 
         for i in list(comb):
             updateChainForces(i[0], i[1])
         for chain in chains:
-            # addSelfForce(i)
             if not chain.isWedge:
                 updateChainVelocities(chain)
                 updateChainPositions(chain)
                 chain.updateParticles()
             chain.force=Fo*chain.orient
             chain.moment=0
+            timeData.append([chain.pos[0], chain.pos[1], chain.angle, chain.linvel[0], chain.linvel[1], chain.angvel])
+            dataArr.append(timeData)
+            
             if chain.isWedge:
                 for particle in chain.particles:
                     plt.plot(particle.pos[0], particle.pos[1], 'b', marker=".", markersize=6)
