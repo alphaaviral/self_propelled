@@ -106,14 +106,6 @@ def updateChainPositions(chain:Chain):
         chain.angle+=2*np.pi
     chain.orient=np.array([np.cos(chain.angle), np.sin(chain.angle)])
 
-
-    # if chain.pos[0]>boxX[1] or chain.pos[0]<boxX[0]:
-    #     chain.orient[0]*=-1
-    #     chain.angle=np.arctan2(chain.orient[1], chain.orient[0])
-    # if chain.pos[1]>boxY[1] or chain.pos[1]<boxY[0]:
-    #     chain.orient[1]*=-1
-    #     chain.angle=np.arctan2(chain.orient[1], chain.orient[0])    
-
 def updateChainVelocities(chain:Chain):
     if not isinstance(chain, Chain):
         raise TypeError("force cannot be calculated for non chains")
@@ -152,57 +144,65 @@ if __name__=="__main__":
     aRatio=l/lamb
     globalChainSize=int(round(9*aRatio/8))
     d=l/(math.sqrt((globalChainSize+1)*(globalChainSize-1)))
-    timeStep=1
+    timeStep=0.25
     Fo=2
     chainNos=20
-    dataArr=[]
+
     fo=1
+    iterations=5
     wedgeSize=globalChainSize*3
     wedgeAngle=np.pi/2
     ft1, ft2, fr = getFrictionCoeff()
     boxX=(-5*l,5*l)
     boxY=(-5*l,5*l)
-    # if globalChainSize%2==0:
-    #     raise ValueError("length of chain must be odd")
+    totalChainNos=chainNos+2 #including wedges
     
     chains=[]
     addWedge(chains)
     for i in range(chainNos):
         chains.append(Chain())
-    
-    for t in range(0, 500):
-        timeData=[[t]]
+
+    dataArr=np.zeros([iterations, totalChainNos, 6])
+    for t in range(0, iterations):
+        # timeData=[[t]]
         print(t)
         comb = combinations(chains, 2)
 
-        if len(dataArr)>1000:
-            with open("./data.csv", 'a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerows(dataArr)
-            dataArr=[]
-
         for i in list(comb):
             updateChainForces(i[0], i[1])
-        for chain in chains:
+        for i in range(len(chains)):
+            print(i)
+            chain=chains[i]
             if not chain.isWedge:
                 updateChainVelocities(chain)
                 updateChainPositions(chain)
                 chain.updateParticles()
             chain.force=Fo*chain.orient
             chain.moment=0
-            timeData.append([chain.pos[0], chain.pos[1], chain.angle, chain.linvel[0], chain.linvel[1], chain.angvel])
-            dataArr.append(timeData)
+
+            dataArr[t][i][0]=chain.pos[0]
+            dataArr[t][i][1]=chain.pos[1]
+            dataArr[t][i][2]=chain.angle
+            dataArr[t][i][3]=chain.linvel[0]
+            dataArr[t][i][4]=chain.linvel[1]
+            dataArr[t][i][5]=chain.angvel
             
-            if chain.isWedge:
-                for particle in chain.particles:
+            for j in range(len(chain.particles)):
+                particle=chain.particles[j]
+                if chain.isWedge:
                     plt.plot(particle.pos[0], particle.pos[1], 'b', marker=".", markersize=6)
-            else:
-                for particle in chain.particles:
+                else:
+                # for j in range(len(chain.particles)):
                     plt.plot(particle.pos[0], particle.pos[1], 'r', marker=".", markersize=6)
+
         plt.xlim(boxX[0], boxX[1])
         plt.ylim(boxY[0], boxY[1])
 
         plt.savefig("./out/test"+str(t)+".png")
         plt.clf()
+    dataArr=dataArr.reshape([iterations, totalChainNos*6])
+    df=pd.DataFrame(dataArr)
+    df.to_csv("./out.csv",header=False)
+
 
 
