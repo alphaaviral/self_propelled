@@ -5,8 +5,10 @@ import math
 from itertools import combinations
 import copy
 import csv
-from sys import getsizeof
+# from sys import getsizeof
 import pandas as pd
+import multiprocessing
+
 
 class Particle:
     def __init__(self, pos, linvel, isFromWedge=False):
@@ -15,7 +17,8 @@ class Particle:
         self.isFromWedge=isFromWedge
 
 class Chain:
-    def __init__(self, chainSize=None, pos=None, angle=None, isWedge=False):    
+    def __init__(self, id, chainSize=None, pos=None, angle=None, isWedge=False):    
+        self.id=id
         if pos is None:
             self.pos=np.array([random.uniform(boxX[0], boxX[1]), random.uniform(boxY[0], boxY[1])], dtype=np.float64)
         else:
@@ -84,14 +87,18 @@ def getForce(a:Particle, b:Particle)->np.ndarray:
 def updateChainForces(a:Chain, b:Chain):
     if not isinstance(a, Chain) or not isinstance(b, Chain):
         raise TypeError("force cannot be calculated for non chains")
-    
+    aforce=np.array([0,0], dtype=np.float64)
+    # bforce=np.array([0,0], dtype=np.float64)
+    amoment=0
+    bmoment=0
     for i in range(len(a.particles)):
         for j in range(len(b.particles)):
             force=getForce(a.particles[i], b.particles[j])
-            a.force+=force
-            b.force-=force
-            a.moment+=np.cross(a.particles[i].pos-a.pos, force)
-            b.moment+=np.cross(b.particles[j].pos-b.pos, -1*force)
+            aforce+=force
+            # bforce-=force
+            amoment+=np.cross(a.particles[i].pos-a.pos, force)
+            bmoment+=np.cross(b.particles[j].pos-b.pos, -1*force)
+    return aforce, amoment, -1*aforce, bmoment
 
 def updateChainPositions(chain:Chain):
     if not isinstance(chain, Chain):
@@ -125,17 +132,42 @@ def getFrictionCoeff():
 def addWedge(chainArray):
     # if wedgeSize%2==0:
     #     raise ValueError("length of wedge must be odd")
-    upperChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize-1)*d*np.cos(wedgeAngle/2)/2,(wedgeSize-1)*d*np.sin(wedgeAngle/2)/2]), dtype=np.float64), 
+    upperChain = Chain(id = 0,chainSize=wedgeSize, pos=np.array(([(wedgeSize-1)*d*np.cos(wedgeAngle/2)/2,(wedgeSize-1)*d*np.sin(wedgeAngle/2)/2]), dtype=np.float64), 
                        angle=wedgeAngle/2, isWedge=True)
     
-    lowerChain = Chain(chainSize=wedgeSize, pos=np.array(([(wedgeSize+1)*d*np.cos(-1*wedgeAngle/2)/2,(wedgeSize+1)*d*np.sin(-1*wedgeAngle/2)/2]), dtype=np.float64), 
+    lowerChain = Chain(id=1, chainSize=wedgeSize, pos=np.array(([(wedgeSize+1)*d*np.cos(-1*wedgeAngle/2)/2,(wedgeSize+1)*d*np.sin(-1*wedgeAngle/2)/2]), dtype=np.float64), 
                        angle=-1*wedgeAngle/2, isWedge=True)
     
     chainArray.append(upperChain)
     chainArray.append(lowerChain)
     # return upperChain, lowerChain
 
+def chain_force_process(result, comb):
+    # with result.get_lock():
+    for i in comb:
+        aforce, amoment, bforce, bmoment =updateChainForces(i[0], i[1])
+        result[i[0].id]+=aforce[0]
+        result[i[0].id+1]+=aforce[1]
+        result[i[0].id+2]+=amoment
+        result[i[1].id]+=bforce[0]
+        result[i[1].id+1]+=bforce[1]
+        result[i[1].id+2]+=bmoment
 
+def splitList(lst, div):
+    splitted=[]
+    vals=[]
+    incr=div-(len(lst)%div)
+    whole=len(lst)//div
+    for i in range(div):
+        if i>=incr:
+            vals.append(whole+1)
+        else:
+            vals.append(whole)
+    currIndex=0
+    for i in range(div):
+        splitted.append(lst[currIndex:(currIndex+vals[i])])
+        currIndex+=vals[i]
+    return splitted
 
 if __name__=="__main__":
     Uo=2
@@ -146,32 +178,52 @@ if __name__=="__main__":
     d=l/(math.sqrt((globalChainSize+1)*(globalChainSize-1)))
     timeStep=0.25
     Fo=2
-    chainNos=20
+    chainNos=100
 
     fo=1
     iterations=5
-    wedgeSize=globalChainSize*3
+    wedgeSize=globalChainSize*4
     wedgeAngle=np.pi/2
     ft1, ft2, fr = getFrictionCoeff()
     boxX=(-5*l,5*l)
     boxY=(-5*l,5*l)
     totalChainNos=chainNos+2 #including wedges
-    
+    processNum=4
     chains=[]
     addWedge(chains)
     for i in range(chainNos):
-        chains.append(Chain())
+        chains.append(Chain(id=i+2))
 
+    comb = combinations(chains, 2)
+    comb = list(comb)
     dataArr=np.zeros([iterations, totalChainNos, 6])
+    sharedArrays=[]
+    
+    splittedComb=splitList(comb, processNum)
+
+    for _ in range(processNum):
+        sharedArrays.append(multiprocessing.RawArray('d', [0]*(totalChainNos*3)))
+
     for t in range(0, iterations):
+        processes=[]
+        for i in range(processNum):
+            processes.append(multiprocessing.Process(target=chain_force_process, args=(sharedArrays[i],splittedComb[i],)))
+            processes[i].start()
+        for process in processes:
+            process.join()
+        for i in range(totalChainNos):
+            for j in range(processNum):
+                chains[i].force[0]+=sharedArrays[j][i*3]
+                chains[i].force[1]+=sharedArrays[j][i*3+1]
+                chains[i].moment+=sharedArrays[j][i*3+2]
         # timeData=[[t]]
         print(t)
-        comb = combinations(chains, 2)
-
-        for i in list(comb):
-            updateChainForces(i[0], i[1])
+        # multiprocessing.Process(target=chain_force_process, args=(sharedArrays[0],)).start()
+        # forceArray = [multiprocessing.Value('d', Fo*chain.orient[0]) for chain in chains]
+        # for i in comb:
+        #     updateChainForces(i[0], i[1])
         for i in range(len(chains)):
-            print(i)
+            # print(i)
             chain=chains[i]
             if not chain.isWedge:
                 updateChainVelocities(chain)
