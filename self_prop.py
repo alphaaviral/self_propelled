@@ -57,8 +57,8 @@ def zxycross(z:float, xy:np.ndarray):
 
 # force on a due to b
 def getForce(a:Particle, b:Particle)->np.ndarray:
-    if not isinstance(a, Particle) or not isinstance(b, Particle):
-        raise TypeError("force cannot be calculated for non particles") 
+    # if not isinstance(a, Particle) or not isinstance(b, Particle):
+    #     raise TypeError("force cannot be calculated for non particles") 
     apos = copy.deepcopy(a.pos)
     bpos= copy.deepcopy(b.pos)
     if abs(apos[0]-bpos[0])>(boxX[1]-boxX[0])/2:
@@ -82,8 +82,8 @@ def getForce(a:Particle, b:Particle)->np.ndarray:
     
 
 def updateChainForces(a:Chain, b:Chain):
-    if not isinstance(a, Chain) or not isinstance(b, Chain):
-        raise TypeError("force cannot be calculated for non chains")
+    # if not isinstance(a, Chain) or not isinstance(b, Chain):
+    #     raise TypeError("force cannot be calculated for non chains")
     
     for i in range(len(a.particles)):
         for j in range(len(b.particles)):
@@ -94,8 +94,8 @@ def updateChainForces(a:Chain, b:Chain):
             b.moment+=np.cross(b.particles[j].pos-b.pos, -1*force)
 
 def updateChainPositions(chain:Chain):
-    if not isinstance(chain, Chain):
-        raise TypeError("force cannot be calculated for non chains")
+    # if not isinstance(chain, Chain):
+    #     raise TypeError("force cannot be calculated for non chains")
     chain.pos+=chain.linvel*timeStep
     chain.pos[0]=((chain.pos[0]-boxX[0])%(boxX[1]-boxX[0]))+boxX[0]
     chain.pos[1]=((chain.pos[1]-boxY[0])%(boxY[1]-boxY[0]))+boxY[0]
@@ -107,8 +107,8 @@ def updateChainPositions(chain:Chain):
     chain.orient=np.array([np.cos(chain.angle), np.sin(chain.angle)])
 
 def updateChainVelocities(chain:Chain):
-    if not isinstance(chain, Chain):
-        raise TypeError("force cannot be calculated for non chains")
+    # if not isinstance(chain, Chain):
+    #     raise TypeError("force cannot be calculated for non chains")
     chain.linvel=((np.dot(chain.force, chain.orient)/ft1)*chain.orient)+((chain.force-np.dot(chain.force, chain.orient)*chain.orient)/ft2)
     chain.angvel=chain.moment/fr
 
